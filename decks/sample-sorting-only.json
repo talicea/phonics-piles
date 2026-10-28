@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-sorting-only",
+  "name": "Sample: Fixed piles (no cross-pile moves)",
+  "description": "Illustrative demo deck: cards stay in their own pile and can only be re-ordered. Capitalisation is preserved exactly as written.",
+  "version": "1.0.0",
+  "piles": [
+    {
+      "id": "beginning",
+      "label": "Beginning",
+      "cards": [
+        {
+          "id": "b-b",
+          "text": "B"
+        },
+        {
+          "id": "b-d",
+          "text": "D"
+        },
+        {
+          "id": "b-f",
+          "text": "F"
+        },
+        {
+          "id": "b-sh",
+          "text": "Sh"
+        },
+        {
+          "id": "b-th",
+          "text": "Th"
+        },
+        {
+          "id": "b-ch",
+          "text": "Ch"
+        }
+      ]
+    },
+    {
+      "id": "middle",
+      "label": "Middle",
+      "cards": [
+        {
+          "id": "m-a",
+          "text": "a"
+        },
+        {
+          "id": "m-e",
+          "text": "e"
+        },
+        {
+          "id": "m-i",
+          "text": "i"
+        },
+        {
+          "id": "m-o",
+          "text": "o"
+        },
+        {
+          "id": "m-u",
+          "text": "u"
+        },
+        {
+          "id": "m-oo",
+          "text": "oo"
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "label": "Ending",
+      "cards": [
+        {
+          "id": "e-ck",
+          "text": "ck"
+        },
+        {
+          "id": "e-ng",
+          "text": "ng"
+        },
+        {
+          "id": "e-nk",
+          "text": "nk"
+        },
+        {
+          "id": "e-sh",
+          "text": "sh"
+        },
+        {
+          "id": "e-tch",
+          "text": "tch"
+        },
+        {
+          "id": "e-t",
+          "text": "t"
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "allowCrossPileMoves": false,
+    "allowReorder": true,
+    "allowFlip": false,
+    "initialShuffle": false
+  },
+  "tags": [
+    "sample",
+    "rules"
+  ]
+}

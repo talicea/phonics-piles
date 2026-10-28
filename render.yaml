@@ -1,0 +1,16 @@
+# Render Blueprint: one web service that serves the compiled frontend AND the Socket.IO server.
+services:
+  - type: web
+    name: phonics-piles
+    runtime: node
+    plan: free            # free instances sleep when idle; use "starter" for classroom reliability
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"

@@ -1,0 +1,141 @@
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/><title>Unknown </title></head><body>
+<h1 id="phonics-piles">Phonics Piles</h1>
+<p>A real-time, browser-based classroom card game for phonics instruction. A teacher shows three piles of cards
+(beginning / middle / ending sounds) whose top cards form a nonsense word; students join from their own devices with a
+short room code and see the same board live. The teacher decides when students may move cards.</p>
+<p>No accounts, no emails, no database. Works on desktop, tablet and phone browsers (mouse and touch).</p>
+<ul>
+<li><strong>Frontend:</strong> React + TypeScript + Vite (<code>client/</code>)</li>
+<li><strong>Backend:</strong> Node.js + TypeScript, Express, Socket.IO (<code>server/</code>) — authoritative game state</li>
+<li><strong>Shared:</strong> types, Zod deck schema, event contract (<code>shared/</code>)</li>
+<li><strong>Decks:</strong> JSON files (<code>decks/</code>), documented in <a href="docs/DECK_SCHEMA.md"><code>docs/DECK_SCHEMA.md</code></a></li>
+</ul>
+<h2 id="quick-start-local-development">Quick start (local development)</h2>
+<p>Requires Node.js 20+ (developed on 22).</p>
+<p><code>bash
+npm install
+npm run dev          # server on :3001, Vite dev server on :5173 (proxies /api and /socket.io)</code></p>
+<p>Open <a href="http://localhost:5173">http://localhost:5173</a>. Click <strong>Create a game</strong> as the teacher, then open a second window (or a private window, or your phone
+on the same network at <code>http://&lt;your-computer-ip&gt;:5173</code>) and join with the code.</p>
+<h2 id="commands">Commands</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>npm run dev</code></td>
+<td>Server (tsx watch) + Vite dev server</td>
+</tr>
+<tr>
+<td><code>npm run build</code></td>
+<td>Production build: client → <code>dist/client</code>, server bundle → <code>dist/server/index.js</code></td>
+</tr>
+<tr>
+<td><code>npm start</code></td>
+<td>Run the production build (serves the frontend <strong>and</strong> Socket.IO from one process)</td>
+</tr>
+<tr>
+<td><code>npm test</code></td>
+<td>Unit + integration tests (Vitest)</td>
+</tr>
+<tr>
+<td><code>npm run typecheck</code></td>
+<td>Strict TypeScript check for server and client</td>
+</tr>
+<tr>
+<td><code>npm run e2e</code></td>
+<td>Two-browser end-to-end test (Playwright/Chromium) against the production build — run <code>npm run build</code> first</td>
+</tr>
+<tr>
+<td><code>npm run schema:json</code></td>
+<td>Regenerate <code>docs/deck.schema.json</code> from the Zod schema</td>
+</tr>
+</tbody>
+</table>
+<p>The E2E test needs a Chromium that <code>playwright-core</code> can find (<code>npx playwright install chromium</code>, or set <code>PLAYWRIGHT_BROWSERS_PATH</code>).</p>
+<h2 id="how-to-play">How to play</h2>
+<ol>
+<li><strong>Teacher:</strong> <em>Create a game</em> → choose a deck (or upload one) → <em>Start game</em>. The room code is shown large for a projector, with <em>Copy code</em> and <em>Copy join link</em>.</li>
+<li><strong>Students:</strong> open the site, enter the code (and optionally a name) → <em>Join game</em>.</li>
+<li>The first card of each pile (marked <strong>TOP</strong>) forms the word in the strip above the piles. Drag cards, or tap one and use the toolbar
+   (<em>Make top, Earlier, Later, → other pile, Flip</em>). Keyboard: arrows move focus, Enter/Space select, Shift+arrows re-order, Esc deselects.</li>
+<li><strong>Who can move cards?</strong> <em>Teacher only</em> / <em>All students</em> / <em>One student at a time</em> (pick the student). Changeable at any time.</li>
+<li><em>Shuffle all piles</em>, per-pile <em>Shuffle</em>, <em>Reset board</em> (back to the starting arrangement), <em>Change deck</em>, <em>End game</em>.</li>
+</ol>
+<p>Touch: press and <strong>hold</strong> a card briefly to pick it up, then drag. A normal swipe still scrolls the page.</p>
+<h2 id="architecture">Architecture</h2>
+<p><code>client (React)  ──Socket.IO──►  server (Express + Socket.IO)
+   Board component                RoomManager ─► Room (authoritative state, permissions, locks)
+   (same for teacher/student)     engine.ts (pure board operations)   deckLibrary (built-in decks)</code></p>
+<ul>
+<li><strong>Server-authoritative.</strong> Clients send <em>requests</em> (<code>board:move</code>, …). The server validates identity, room membership, permission,
+  payload shape (Zod) and game rules, updates the state, then broadcasts to that room only. The UI changes when the broadcast arrives.</li>
+<li><strong>Rooms.</strong> Each room has two Socket.IO channels (<code>r:CODE:host</code>, <code>r:CODE:students</code>); every emit targets exactly one room.
+  A socket's room/role is stored <strong>server-side at join time</strong> — nothing in later events (role, host flag, room) is trusted.</li>
+<li><strong>Secrets.</strong> Room code (public, 5 chars from an unambiguous alphabet, <code>crypto.randomInt</code>) is separate from the host token
+  (256-bit random, returned once to the creator, stored server-side only as a SHA-256 digest, compared in constant time, never broadcast or logged).
+  Students get a private participant token so they can reclaim their seat after a dropped connection.</li>
+<li><strong>Reconnect.</strong> On every (re)connect the client re-authenticates (host token / participant token) and receives a fresh snapshot.
+  A room the server no longer knows (restart, expiry) produces a clear "no longer available" screen instead of a stale board.
+  On graceful shutdown (SIGTERM, e.g. a deploy) clients are told "the server restarted" immediately.</li>
+<li><strong>Face-down cards.</strong> If a deck allows flipping, the server does not send the <em>text</em> of face-down cards to students.</li>
+</ul>
+<h3 id="conflict-rules-simultaneous-actions">Conflict rules (simultaneous actions)</h3>
+<ol>
+<li>Starting a drag takes a <strong>server-side lock</strong> on the card (one lock per participant; auto-expires after <code>LOCK_TTL_MS</code>, refreshed while dragging, released on drop/disconnect).</li>
+<li>Others cannot lock/move/flip a locked card (<code>CARD_LOCKED</code>).</li>
+<li><strong>The teacher always wins:</strong> a host action overrides and clears a student's lock.</li>
+<li>Each card remembers the board version at which it last changed; a move based on an older version of <em>that card</em> is rejected (<code>STALE</code>) and the sender is re-synced. Unrelated cards are unaffected.</li>
+<li>Shuffle/reset/deck-change invalidate in-flight moves via rule 4. A student cannot shuffle a pile containing a card someone else is holding.</li>
+</ol>
+<h3 id="decisions-where-the-brief-was-open">Decisions where the brief was open</h3>
+<ul>
+<li>A student with permission may <strong>move, flip and shuffle</strong>; <strong>reset, change deck, permissions and end game are teacher-only.</strong></li>
+<li>Exactly <strong>three piles</strong> per deck. "Top" = first card of a pile; the word strip shows the three top cards.</li>
+<li>Reset restores the <em>starting arrangement of this room</em> (after any initial shuffle).</li>
+<li>Host token lives in the teacher's <code>localStorage</code> (so a refresh/closed tab can resume); the student token lives in <code>sessionStorage</code> (one seat per tab). Both vanish with the room.</li>
+<li>Students who stay offline for <code>PARTICIPANT_GRACE_MS</code> (5 min) lose their seat; rooms with nobody connected for <code>ROOM_IDLE_TTL_MS</code> (30 min) or older than <code>ROOM_MAX_AGE_MS</code> (12 h) are deleted.</li>
+<li>Uploaded decks are kept in the teacher's browser (<code>localStorage</code>, max 20) and sent to the server only when starting/changing a game.</li>
+</ul>
+<h2 id="configuration">Configuration</h2>
+<p>All optional — see <a href=".env.example"><code>.env.example</code></a>. The server reads <code>process.env</code> directly (use your platform's env settings, or <code>node --env-file=.env dist/server/index.js</code>).
+Notable: <code>PORT</code>, <code>TRUST_PROXY=true</code> (behind Render/nginx), <code>CORS_ORIGINS</code> (only for a split frontend/backend deployment), <code>MAX_DECK_BYTES</code>, <code>MAX_ROOMS</code>, <code>MAX_PARTICIPANTS_PER_ROOM</code>, and the lifecycle timers.
+Rate limits: per-socket token bucket for state-changing events (burst 30, 15/s) and per-IP limits for room creation (10/min) and join/resume attempts (30/min, which also throttles code guessing).</p>
+<h2 id="deployment-render-single-service">Deployment (Render, single service)</h2>
+<p>The server serves the compiled frontend and Socket.IO from one origin, so there is no CORS setup; Render terminates HTTPS and WSS.</p>
+<ol>
+<li>Push this repo to GitHub/GitLab.</li>
+<li>In Render: <strong>New → Blueprint</strong> and select the repo (uses <a href="render.yaml"><code>render.yaml</code></a>), <em>or</em> <strong>New → Web Service</strong> with:</li>
+<li>Build command: <code>npm ci --include=dev &amp;&amp; npm run build</code> (the build needs devDependencies)</li>
+<li>Start command: <code>npm start</code></li>
+<li>Health check path: <code>/healthz</code></li>
+<li>Env: <code>NODE_VERSION=22</code>, <code>NODE_ENV=production</code>, <code>TRUST_PROXY=true</code></li>
+<li>Open the service URL. Students use the same URL.</li>
+</ol>
+<p>Notes: game state is <strong>in memory</strong> — run <strong>one instance</strong> (do not scale horizontally) and expect sessions to end on restart/deploy.
+Free-tier instances sleep when idle and the first request after sleeping is slow; use a paid instance for classroom reliability.
+Any host with persistent Node processes and WebSocket support works the same way (<code>npm ci --include=dev &amp;&amp; npm run build &amp;&amp; npm start</code>).</p>
+<p><strong>Split deployment (not recommended):</strong> host <code>dist/client</code> on a static host, build it with <code>VITE_SERVER_URL=https://your-server</code>, and set <code>CORS_ORIGINS=https://your-frontend</code> on the server.</p>
+<h2 id="testing">Testing</h2>
+<p><code>npm test</code> runs 65 tests (shared deck validation, engine and room logic with a controllable clock, and real Socket.IO client ↔ server integration).
+They cover: unique codes, joining, invalid codes, initial sync, broadcasts, cross-room isolation, disabled/enabled/one-student permissions,
+malformed payloads and unknown cards, deck validation, duplicate card text, reconnect (student and host), ending a room, conflicting simultaneous actions,
+lock expiry, rate limits, capacity, expiry, and graceful shutdown. <code>npm run e2e</code> drives two real browser sessions (desktop teacher + touch phone student).</p>
+<h2 id="what-has-and-has-not-been-verified">What has and has not been verified</h2>
+<p><strong>Verified by running it</strong> (in the development sandbox):
+<code>npm test</code> (65 passing), <code>npm run typecheck</code>, <code>npm run build</code>, <code>npm run dev</code> (Vite proxy serves API, health and the Socket.IO handshake), and <code>npm run e2e</code>
+(35 checks, Chromium: create/join, live sync, mouse drag, touch long-press drag via real touch events, swipe-to-scroll not dragging, disabled student interaction,
+mode changes, one-student mode, offline → reconnect resync, host reload/resume, invalid/valid deck upload, graceful restart and hard-crash handling, ending a room).</p>
+<p><strong>Not verified — please check before relying on it in class:</strong>
+<em> <strong>Not deployed.</strong> I did not deploy to Render or any host, so HTTPS/WSS behind a real proxy, <code>TRUST_PROXY</code> behaviour and the <code>render.yaml</code> blueprint are untested.
+</em> <strong>Browsers/devices:</strong> only Chromium (desktop and emulated phone). Safari/iOS (touch-drag and scroll blocking behave differently there), Firefox and real tablets are untested.
+<em> <strong>Accessibility:</strong> designed for keyboard/screen-reader use (labels, roles, live regions, focus styles, no colour-only cues, reduced-motion) but <strong>not audited</strong> with a screen reader or automated tool; contrast was chosen to be high but not measured.
+</em> <strong>Scale:</strong> not load-tested; one in-memory instance only.
+* The <code>PARTICIPANT_GRACE_MS</code>/idle expiry paths are tested with a fake clock, not in real time.</p>
+<p><strong>Intentionally not included (MVP):</strong> persistence/database, multi-instance scaling, kicking/muting individual students, server-side storage of uploaded decks,
+shared (rather than per-device) card selection, undo, and a curriculum-accurate phonics deck (the bundled decks are labelled illustrative samples).</p>
+</body></html>

@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-cvc-short-vowels",
+  "name": "Sample: Short vowels (CVC)",
+  "description": "Illustrative demo deck: single consonants with short vowels. Not a complete phonics curriculum; some combinations are real words, some are nonsense.",
+  "version": "1.0.0",
+  "piles": [
+    {
+      "id": "beginning",
+      "label": "Beginning sound",
+      "cards": [
+        {
+          "id": "b-b",
+          "text": "b"
+        },
+        {
+          "id": "b-c",
+          "text": "c"
+        },
+        {
+          "id": "b-d",
+          "text": "d"
+        },
+        {
+          "id": "b-f",
+          "text": "f"
+        },
+        {
+          "id": "b-g",
+          "text": "g"
+        },
+        {
+          "id": "b-h",
+          "text": "h"
+        },
+        {
+          "id": "b-j",
+          "text": "j"
+        },
+        {
+          "id": "b-k",
+          "text": "k"
+        },
+        {
+          "id": "b-l",
+          "text": "l"
+        },
+        {
+          "id": "b-m",
+          "text": "m"
+        },
+        {
+          "id": "b-n",
+          "text": "n"
+        },
+        {
+          "id": "b-p",
+          "text": "p"
+        },
+        {
+          "id": "b-r",
+          "text": "r"
+        },
+        {
+          "id": "b-s",
+          "text": "s"
+        },
+        {
+          "id": "b-t",
+          "text": "t"
+        },
+        {
+          "id": "b-v",
+          "text": "v"
+        },
+        {
+          "id": "b-w",
+          "text": "w"
+        },
+        {
+          "id": "b-z",
+          "text": "z"
+        }
+      ]
+    },
+    {
+      "id": "middle",
+      "label": "Middle sound",
+      "cards": [
+        {
+          "id": "m-a",
+          "text": "a"
+        },
+        {
+          "id": "m-e",
+          "text": "e"
+        },
+        {
+          "id": "m-i",
+          "text": "i"
+        },
+        {
+          "id": "m-o",
+          "text": "o"
+        },
+        {
+          "id": "m-u",
+          "text": "u"
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "label": "Ending sound",
+      "cards": [
+        {
+          "id": "e-b",
+          "text": "b"
+        },
+        {
+          "id": "e-d",
+          "text": "d"
+        },
+        {
+          "id": "e-g",
+          "text": "g"
+        },
+        {
+          "id": "e-m",
+          "text": "m"
+        },
+        {
+          "id": "e-n",
+          "text": "n"
+        },
+        {
+          "id": "e-p",
+          "text": "p"
+        },
+        {
+          "id": "e-t",
+          "text": "t"
+        },
+        {
+          "id": "e-x",
+          "text": "x"
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "allowCrossPileMoves": true,
+    "allowReorder": true,
+    "allowFlip": false,
+    "initialShuffle": false
+  },
+  "tags": [
+    "sample",
+    "cvc",
+    "short-vowels"
+  ]
+}
