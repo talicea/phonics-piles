@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-phonograms",
+  "name": "Sample: Multi-letter phonograms",
+  "description": "Illustrative demo deck showing multi-letter cards such as sh, ck, tch, ight. Teachers choose which combinations suit the lesson.",
+  "version": "1.0.0",
+  "piles": [
+    {
+      "id": "beginning",
+      "label": "Beginning",
+      "cards": [
+        {
+          "id": "b-sh",
+          "text": "sh",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-ch",
+          "text": "ch",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-th",
+          "text": "th",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-wh",
+          "text": "wh",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-ph",
+          "text": "ph",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-kn",
+          "text": "kn",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-wr",
+          "text": "wr",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-str",
+          "text": "str",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-spl",
+          "text": "spl",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-b",
+          "text": "b",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-d",
+          "text": "d",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "b-m",
+          "text": "m",
+          "tags": [
+            "phonogram"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "middle",
+      "label": "Middle",
+      "cards": [
+        {
+          "id": "m-a",
+          "text": "a",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-e",
+          "text": "e",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-i",
+          "text": "i",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-o",
+          "text": "o",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-u",
+          "text": "u",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-ai",
+          "text": "ai",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-ee",
+          "text": "ee",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-oa",
+          "text": "oa",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-oo",
+          "text": "oo",
+          "tags": [
+            "vowel"
+          ]
+        },
+        {
+          "id": "m-ou",
+          "text": "ou",
+          "tags": [
+            "vowel"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "label": "Ending",
+      "cards": [
+        {
+          "id": "e-ck",
+          "text": "ck",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-tch",
+          "text": "tch",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-dge",
+          "text": "dge",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-ng",
+          "text": "ng",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-nk",
+          "text": "nk",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-ght",
+          "text": "ght",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-sh",
+          "text": "sh",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-ch",
+          "text": "ch",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-th",
+          "text": "th",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-t",
+          "text": "t",
+          "tags": [
+            "phonogram"
+          ]
+        },
+        {
+          "id": "e-p",
+          "text": "p",
+          "tags": [
+            "phonogram"
+          ]
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "allowCrossPileMoves": true,
+    "allowReorder": true,
+    "allowFlip": false,
+    "initialShuffle": false
+  },
+  "tags": [
+    "sample",
+    "phonograms",
+    "digraphs"
+  ]
+}

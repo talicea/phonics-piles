@@ -1,0 +1,137 @@
+{
+  "$id": "https://example.invalid/phonics-piles/deck-v1.schema.json",
+  "title": "Phonics Piles deck (schemaVersion 1)",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "description": {
+      "default": "",
+      "type": "string",
+      "maxLength": 300
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20
+    },
+    "piles": {
+      "minItems": 3,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "cards": {
+            "minItems": 1,
+            "maxItems": 60,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16
+                },
+                "faceDown": {
+                  "type": "boolean"
+                },
+                "tags": {
+                  "maxItems": 8,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "cards"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "rules": {
+      "default": {
+        "allowCrossPileMoves": true,
+        "allowReorder": true,
+        "allowFlip": false,
+        "initialShuffle": false
+      },
+      "type": "object",
+      "properties": {
+        "allowCrossPileMoves": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowReorder": {
+          "default": true,
+          "type": "boolean"
+        },
+        "allowFlip": {
+          "default": false,
+          "type": "boolean"
+        },
+        "initialShuffle": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tags": {
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "piles"
+  ],
+  "additionalProperties": false
+}

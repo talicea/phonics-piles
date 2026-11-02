@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!-- saved from url=(0063)http://127.0.0.1:8765/lessons/05/skills_05.html?t=1793158375621 -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><title>skills 5</title>
+<style>
+@font-face { font-family: PlaywriteCO; font-weight: 100 400;
+  src: url(data:font/ttf;base64,AAAA) format("truetype"); }
+@page { size: 4in 6in; margin: 0; }
+html, body { margin: 0; padding: 0; background: #fff; }
+.card { width: 4in; height: 6in; page-break-after: always; break-after: page;
+  overflow: hidden; }
+.card svg { width: 100%; height: 100%; display: block; }
+@media screen { body { background: #ddd; display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; }
+  .card { page-break-after: auto; } }
+</style></head><body data-ready="1">
+
+<section class="card">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 896 1345" data-w="896" data-cy="573.5">
+  <rect x="1" y="1" width="894" height="1343" rx="58.24" fill="#fff" stroke="#666" stroke-width="2"></rect>
+  <g class="content">
+    
+    <text class="glyph" x="448.0" y="721.0" text-anchor="middle" font-family="PlaywriteCO, cursive" font-weight="400" font-size="592.0" fill="#000000" stroke="#000000" stroke-width="10.064" stroke-linejoin="round" paint-order="stroke">k</text>
+  </g>
+  
+  <text x="846" y="1295" text-anchor="end" font-family="Times New Roman, Times, serif" font-size="75" fill="#555555">5</text>
+</svg>
+</section>
+
+<section class="card">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 896 1345" data-w="896" data-cy="573.5">
+  <rect x="1" y="1" width="894" height="1343" rx="58.24" fill="#fff" stroke="#666" stroke-width="2"></rect>
+  <g class="content">
+    
+    <text class="glyph" x="448.0" y="721.0" text-anchor="middle" font-family="PlaywriteCO, cursive" font-weight="400" font-size="592.0" fill="#0b1a6b" stroke="#0b1a6b" stroke-width="10.064" stroke-linejoin="round" paint-order="stroke">ck</text>
+  </g>
+  
+  <text x="846" y="1295" text-anchor="end" font-family="Times New Roman, Times, serif" font-size="75" fill="#555555">5</text>
+</svg>
+</section>
+<script>
+// Once the font is loaded: size writing lines to the word/grapheme width,
+// and shrink the whole line+text group if it would overflow the card.
+document.fonts.load('400 100px PlaywriteCO').then(() => document.fonts.ready).then(() => {
+  document.querySelectorAll('.card svg').forEach(svg => {
+    const W = +svg.dataset.w, cy = +svg.dataset.cy;
+    const g = svg.querySelector('.content');
+    const t = svg.querySelector('.glyph');
+    const bb = t.getBBox();
+    const pad = 32 * 1.1;
+    const lw = bb.width + 2 * pad;
+    svg.querySelectorAll('.rule').forEach(r => {
+      r.setAttribute('x', W / 2 - lw / 2); r.setAttribute('width', lw); });
+    const s = Math.min(1, W * 0.84 / lw);
+    if (s < 1) g.setAttribute('transform',
+      `translate(${W/2} ${cy}) scale(${s}) translate(${-W/2} ${-cy})`);
+  });
+  document.body.dataset.ready = '1';
+});
+</script></body></html>

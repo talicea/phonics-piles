@@ -1,0 +1,54 @@
+{
+  "name": "phonics-piles",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time multiplayer classroom card game for phonics instruction",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch --tsconfig server/tsconfig.json server/src/index.ts",
+    "dev:client": "vite --config client/vite.config.ts",
+    "build": "npm run clean && npm run build:client && npm run build:server",
+    "build:client": "vite build --config client/vite.config.ts",
+    "build:server": "esbuild server/src/index.ts --bundle --platform=node --format=esm --packages=external --tsconfig=server/tsconfig.json --outfile=dist/server/index.js --sourcemap",
+    "clean": "rimraf dist",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "node e2e/table.mjs && node e2e/practice.mjs && node e2e/classic-board.mjs",
+    "schema:json": "tsx --tsconfig scripts/tsconfig.json scripts/generate-json-schema.ts",
+    "import:html": "tsx --tsconfig scripts/tsconfig.json scripts/import-html-cards.ts",
+    "e2e:table": "node e2e/table.mjs",
+    "e2e:classic": "node e2e/classic-board.mjs",
+    "e2e:practice": "node e2e/practice.mjs"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "helmet": "^8.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "esbuild": "^0.28.2",
+    "linkedom": "^0.18.14",
+    "playwright-core": "^1.56.0",
+    "rimraf": "^6.1.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

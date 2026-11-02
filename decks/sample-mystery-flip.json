@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-mystery-flip",
+  "name": "Sample: Mystery cards (flip + duplicates)",
+  "description": "Illustrative demo deck: cards can be flipped face-down. Students cannot see face-down cards until the teacher reveals them. Includes duplicate card text with different ids.",
+  "version": "1.0.0",
+  "piles": [
+    {
+      "id": "beginning",
+      "label": "Beginning",
+      "cards": [
+        {
+          "id": "b-s",
+          "text": "s"
+        },
+        {
+          "id": "b-t",
+          "text": "t"
+        },
+        {
+          "id": "b-t-2",
+          "text": "t"
+        },
+        {
+          "id": "b-m",
+          "text": "m"
+        },
+        {
+          "id": "b-n",
+          "text": "n"
+        },
+        {
+          "id": "b-p",
+          "text": "p"
+        },
+        {
+          "id": "b-c",
+          "text": "c"
+        },
+        {
+          "id": "b-c-2",
+          "text": "c"
+        }
+      ]
+    },
+    {
+      "id": "middle",
+      "label": "Middle",
+      "cards": [
+        {
+          "id": "m-a",
+          "text": "a",
+          "faceDown": true
+        },
+        {
+          "id": "m-a-2",
+          "text": "a",
+          "faceDown": true
+        },
+        {
+          "id": "m-e",
+          "text": "e",
+          "faceDown": true
+        },
+        {
+          "id": "m-i",
+          "text": "i",
+          "faceDown": true
+        },
+        {
+          "id": "m-o",
+          "text": "o",
+          "faceDown": true
+        },
+        {
+          "id": "m-u",
+          "text": "u",
+          "faceDown": true
+        }
+      ]
+    },
+    {
+      "id": "ending",
+      "label": "Ending",
+      "cards": [
+        {
+          "id": "e-n",
+          "text": "n"
+        },
+        {
+          "id": "e-n-2",
+          "text": "n"
+        },
+        {
+          "id": "e-p",
+          "text": "p"
+        },
+        {
+          "id": "e-t",
+          "text": "t"
+        },
+        {
+          "id": "e-g",
+          "text": "g"
+        },
+        {
+          "id": "e-d",
+          "text": "d"
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "allowCrossPileMoves": true,
+    "allowReorder": true,
+    "allowFlip": true,
+    "initialShuffle": true
+  },
+  "tags": [
+    "sample",
+    "flip",
+    "duplicates"
+  ]
+}
