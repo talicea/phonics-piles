@@ -62,3 +62,28 @@ as the current (nonsense) word. Drag a card to the front of a pile — or use **
 
 Every deck is validated in the browser (to give instant feedback) **and again on the server** (never trusted) before a room uses it.
 Errors name the exact place, e.g. `piles[2].cards[4].text: Card text must not be empty.` (numbers are 1-based).
+
+## Card formatting (optional)
+
+A deck may describe how its cards look. Everything here is optional; decks without it are drawn as plain tiles / script letters.
+All values are validated: colours must be hex (`#990000` or `#900`), fonts come from a fixed list, numbers are range-checked.
+Sizes are **fractions** of the card (so cards look the same at any size).
+
+* `cardAspectRatio` (deck) — width ÷ height, 0.4–2.5 (a 4×6 in portrait card is `0.66617`).
+* `cardStyle` (deck) — defaults for every card; `style` (card) overrides it. Fields:
+
+| Field | Meaning |
+|---|---|
+| `fontId` | `default`, `serif`, or `playwrite-co` (bundled cursive font) |
+| `fontWeight` | 100–900 |
+| `fontSize` | text size, fraction of card height (0.1–0.9) |
+| `glyphY` | text baseline position, fraction of card height |
+| `textColor`, `outlineColor`, `outlineWidth` | colour, outline colour (default = text colour) and outline thickness as a fraction of the font size |
+| `background`, `borderColor`, `borderWidth`, `cornerRadius` | card face; border thickness and rounding as fractions of card width |
+| `corners` | `topLeft` / `topRight` / `bottomLeft` / `bottomRight`, each `{ "text": "2", "color": "#990000", "fontId": "serif", "size": 0.056 }` (text ≤ 6 chars) |
+
+Example card: `{ "id": "middle-a", "text": "a", "tags": ["lesson-1"], "style": { "textColor": "#990000", "corners": { "topLeft": { "text": "2", "color": "#990000" } } } }`
+
+## Piles, top cards and discards (at run time)
+
+In a room each pile is a *draw pile* plus a *discard*. The first card of the draw pile is the **top** card. Tapping a pile moves its top card to the discard; the deck file itself only lists the cards.

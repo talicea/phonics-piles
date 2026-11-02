@@ -1,0 +1,3 @@
+PlaywriteCO.ttf - Playwrite CO
+Copyright 2023 The Playwrite Project Authors (https://github.com/TypeTogether/Playwrite)
+Licensed under the SIL Open Font License, Version 1.1 - https://openfontlicense.org

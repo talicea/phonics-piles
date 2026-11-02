@@ -6,7 +6,9 @@ import helmet from 'helmet';
 import { Server, type Socket } from 'socket.io';
 import {
   CreateRoomPayloadSchema, FlipPayloadSchema, HostResumePayloadSchema, JoinPayloadSchema, LoadDeckPayloadSchema, LockPayloadSchema,
-  MovePayloadSchema, SetPermissionsPayloadSchema, ShufflePayloadSchema, formatIssues, normalizeRoomCode, validateDeck,
+  MovePayloadSchema, PileDrawPayloadSchema, PileRecyclePayloadSchema, PileUndoPayloadSchema,
+  PracticeAllowSelfPayloadSchema, PracticeEndPayloadSchema, PracticeImportPayloadSchema, PracticeMarkPayloadSchema, PracticePointsPayloadSchema, PracticeStartPayloadSchema, PracticeUnmarkPayloadSchema,
+  SetPermissionsPayloadSchema, ShufflePayloadSchema, formatIssues, normalizeRoomCode, validateDeck,
   type Ack, type AckResult, type ClientToServerEvents, type CreateRoomPayload, type Deck, type ErrorCode, type ServerToClientEvents,
   type Role, type EndReason,
 } from '@shared/index';
@@ -24,6 +26,8 @@ interface SocketData {
   role?: Role;
   participantId?: string;
   bucket: TokenBucket;
+  /** Tracing point batches have their own allowance so a long stroke cannot starve taps (and vice versa). */
+  pointsBucket: TokenBucket;
 }
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type Handler = (socket: GameSocket, payload: unknown) => AckResult<Record<string, unknown>> | Promise<AckResult<Record<string, unknown>>>;
@@ -141,13 +145,27 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
   function broadcast(room: Room, changes: Change[]): void {
     const set = new Set(changes);
     if (set.has('snapshot')) {
-      emitBoth(room, 'room:snapshot', [room.snapshot(true)], [room.snapshot(false)]);
+      // Practice lists are per student, so each student gets a snapshot built for THEM (never someone else's list).
+      io.to(hostChannel(room.code)).emit('room:snapshot', room.snapshot(true));
+      for (const sid of room.allSocketIds()) {
+        const sock = io.sockets.sockets.get(sid);
+        if (sock && sock.data.role === 'student') sock.emit('room:snapshot', room.snapshot(false, sock.data.participantId));
+      }
       return;
     }
     if (set.has('board')) emitBoth(room, 'board:update', [toBoardView(room.board, true)], [toBoardView(room.board, false)]);
     if (set.has('locks')) io.to([hostChannel(room.code), studentChannel(room.code)]).emit('board:locks', room.lockMap());
     if (set.has('permissions')) io.to([hostChannel(room.code), studentChannel(room.code)]).emit('room:permissions', { ...room.permissions });
     if (set.has('presence')) emitBoth(room, 'room:presence', [room.presence(true)], [room.presence(false)]);
+    if (set.has('practice')) {
+      // Host gets every list; each student only their own.
+      io.to(hostChannel(room.code)).emit('practice:update', room.practiceState(true));
+      for (const sid of room.allSocketIds()) {
+        const sock = io.sockets.sockets.get(sid);
+        if (!sock || sock.data.role !== 'student' || !sock.data.participantId) continue;
+        sock.emit('practice:update', room.practiceState(false, sock.data.participantId));
+      }
+    }
   }
 
   function detachSocket(id: string): void {
@@ -217,7 +235,7 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
       const ack: Ack<Record<string, unknown>> = typeof ackFn === 'function' ? (ackFn as Ack<Record<string, unknown>>) : () => undefined;
       void (async () => {
         try {
-          if (!SKIP_BUCKET.has(event) && !socket.data.bucket.take(now())) return ack(err('RATE_LIMITED', 'Slow down a little.') as never);
+          if (!SKIP_BUCKET.has(event) && !(event === 'practice:points' ? socket.data.pointsBucket : socket.data.bucket).take(now())) return ack(err('RATE_LIMITED', 'Slow down a little.') as never);
           let parsed: unknown = payload;
           if (schema) {
             const r = schema.safeParse(payload ?? {});
@@ -235,6 +253,7 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
 
   io.on('connection', (socket: GameSocket) => {
     socket.data.bucket = new TokenBucket(config.actionBurst, config.actionRefillPerSec, now());
+    socket.data.pointsBucket = new TokenBucket(20, 12, now());
 
     on(socket, 'room:create', CreateRoomPayloadSchema, (s, raw) => {
       if (!createLimiter.hit(clientIp(s), now())) return err('RATE_LIMITED', 'Too many games created from this network. Try again in a minute.');
@@ -282,7 +301,7 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
       s.data.participantId = participantId;
       void s.join(studentChannel(room.code));
       broadcast(room, ['presence']);
-      return { ok: true, you: { role: 'student', participantId, displayName: name }, snapshot: room.snapshot(false), ...(token ? { participantToken: token } : {}) };
+      return { ok: true, you: { role: 'student', participantId, displayName: name }, snapshot: room.snapshot(false, participantId), ...(token ? { participantToken: token } : {}) };
     });
 
     on(socket, 'host:resume', HostResumePayloadSchema, (s, raw) => {
@@ -313,7 +332,7 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
     /** Run a Room method, broadcast what changed, resync the sender if their view was out of date. */
     const finish = (room: Room, s: GameSocket, res: ReturnType<Room['reset']>): AckResult => {
       if (!res.ok) {
-        if (res.code === 'STALE' || res.code === 'CARD_NOT_FOUND') s.emit('room:snapshot', room.snapshot(s.data.role === 'host'));
+        if (res.code === 'STALE' || res.code === 'CARD_NOT_FOUND') s.emit('room:snapshot', room.snapshot(s.data.role === 'host', s.data.participantId));
         return err(res.code, res.message);
       }
       broadcast(room, res.changes);
@@ -329,6 +348,10 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
       return finish(room, s, room.shuffle(actor, sp.scope === 'all' ? 'all' : sp.pileId, now()));
     }));
 
+    on(socket, 'pile:draw', PileDrawPayloadSchema, withSession((room, actor, s, p) => finish(room, s, room.drawCard(actor, p as import('@shared/index').PileDrawPayload, now()))));
+    on(socket, 'pile:undo', PileUndoPayloadSchema, withSession((room, actor, s, p) => finish(room, s, room.undoDraw(actor, p as import('@shared/index').PileUndoPayload, now()))));
+    on(socket, 'pile:recycle', PileRecyclePayloadSchema, withSession((room, actor, s, p) => finish(room, s, room.recycle(actor, p as import('@shared/index').PileRecyclePayload, now()))));
+
     on(socket, 'board:reset', null, hostOnly((room, actor, s) => finish(room, s, room.reset(actor))));
     on(socket, 'host:set-permissions', SetPermissionsPayloadSchema, hostOnly((room, actor, s, p) => {
       const sp = p as import('@shared/index').SetPermissionsPayload;
@@ -339,6 +362,55 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
       if (isError(d)) return d;
       return finish(room, s, room.loadDeck(actor, d.deck));
     }));
+    // ---- Practice lists (mark / unmark / allow self)
+    on(socket, 'practice:mark', PracticeMarkPayloadSchema, withSession((room, actor, s, p) => {
+      const payload = p as import('@shared/index').PracticeMarkPayload;
+      return finish(room, s, room.markPractice(actor, payload.participantId, payload.card, now()));
+    }));
+    on(socket, 'practice:unmark', PracticeUnmarkPayloadSchema, withSession((room, actor, s, p) => {
+      const payload = p as import('@shared/index').PracticeUnmarkPayload;
+      return finish(room, s, room.unmarkPractice(actor, payload.participantId, payload.cardId));
+    }));
+    on(socket, 'practice:allow-self', PracticeAllowSelfPayloadSchema, hostOnly((room, actor, s, p) => {
+      const payload = p as import('@shared/index').PracticeAllowSelfPayload;
+      return finish(room, s, room.setAllowSelfAssessment(actor, payload.enabled));
+    }));
+    on(socket, 'practice:import', PracticeImportPayloadSchema, hostOnly((room, actor, s, p) => {
+      const payload = p as import('@shared/index').PracticeImportPayload;
+      return finish(room, s, room.importPractice(actor, payload.participantId, payload.cards, now()));
+    }));
+
+    // ---- Tracing practice live mirror (student → teacher only)
+    on(socket, 'practice:start', PracticeStartPayloadSchema, withSession((room, actor, s, p) => {
+      if (actor.role !== 'student') return err('FORBIDDEN', 'Only students stream tracing practice.');
+      const payload = p as import('@shared/index').PracticeStartPayload;
+      if (!room.canTraceText(actor.participantId, payload.text)) return err('CARD_NOT_FOUND', 'That is not a card in this deck or on your practice list.');
+      const name = room.participantName(actor.participantId) ?? 'Student';
+      io.to(hostChannel(room.code)).emit('practice:student-start', {
+        participantId: actor.participantId,
+        name,
+        text: payload.text,
+        cat: payload.cat,
+        count: payload.count,
+        lesson: payload.lesson,
+      });
+      return { ok: true };
+    }));
+    on(socket, 'practice:points', PracticePointsPayloadSchema, withSession((room, actor, s, p) => {
+      if (actor.role !== 'student') return err('FORBIDDEN', 'Only students stream tracing practice.');
+      const payload = p as import('@shared/index').PracticePointsPayload;
+      io.to(hostChannel(room.code)).emit('practice:student-points', {
+        participantId: actor.participantId,
+        points: payload.points,
+      });
+      return { ok: true };
+    }));
+    on(socket, 'practice:end', PracticeEndPayloadSchema, withSession((room, actor, s, p) => {
+      if (actor.role !== 'student') return err('FORBIDDEN', 'Only students stream tracing practice.');
+      io.to(hostChannel(room.code)).emit('practice:student-end', { participantId: actor.participantId });
+      return { ok: true };
+    }));
+
     on(socket, 'host:end', null, hostOnly((room) => {
       log(`[room] ended ${room.code}`);
       endRoom(room, 'host-ended');
@@ -349,6 +421,8 @@ export function createGameServer(config: ServerConfig, options: GameServerOption
       const code = socket.data.roomCode;
       const room = code ? rooms.get(code) : undefined;
       if (!room) return;
+      // A student who vanishes mid-stroke must not leave a stuck "is tracing" thumbnail on the teacher's screen.
+      if (socket.data.role === 'student' && socket.data.participantId) io.to(hostChannel(room.code)).emit('practice:student-end', { participantId: socket.data.participantId });
       const changes = socket.data.role === 'host' ? room.unbindHost(socket.id, now()) : room.unbindStudent(socket.data.participantId ?? '', socket.id, now());
       if (changes.length) broadcast(room, changes);
     });

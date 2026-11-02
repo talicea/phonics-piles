@@ -21,7 +21,7 @@ export async function fetchMaxDeckBytes(): Promise<number> {
 
 // ---------------------------------------------------------------- uploaded decks live in THIS browser only (MVP)
 const CUSTOM_KEY = 'phonics.customDecks.v1';
-const MAX_SAVED = 20;
+const MAX_SAVED = 40;
 
 export const customDecks = {
   load(): Deck[] {

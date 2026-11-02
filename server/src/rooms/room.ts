@@ -10,16 +10,16 @@
  *     older than that is rejected with STALE ("first writer wins"), so nobody silently overwrites a newer change.
  *  5. Shuffle / reset / deck-load change many cards at once; they invalidate in-flight moves via rule 4.
  */
-import type { Deck, ErrorCode, LockMap, Permissions, ParticipantView, Presence, RoomSnapshot, DeckMeta, FlipPayload, MovePayload } from '@shared/index';
-import { sanitizeDisplayName } from '@shared/index';
+import type { Deck, ErrorCode, LockMap, Permissions, ParticipantView, Presence, PracticeCard, PracticeState, RoomSnapshot, DeckMeta, FlipPayload, MovePayload } from '@shared/index';
+import { sanitizeDisplayName, buildDeckMeta } from '@shared/index';
 import {
-  allCardIds, cloneBoard, createBoard, findCard, findPile, flipCard, moveCard, restoreBoard, shuffleBoard, toBoardView,
+  allCardIds, cloneBoard, createBoard, drawTop, findCard, findPile, flipCard, moveCard, recycleDiscard, restoreBoard, shuffleBoard, toBoardView, undoDraw,
   type BoardState, type Rng, secureRandomInt,
 } from '../game/engine';
 import { generateParticipantId, generateToken, hashToken, tokenMatches } from '../util/ids';
 
 export type Actor = { role: 'host' } | { role: 'student'; participantId: string };
-export type Change = 'board' | 'locks' | 'permissions' | 'presence' | 'snapshot';
+export type Change = 'board' | 'locks' | 'permissions' | 'presence' | 'snapshot' | 'practice';
 export type RoomResult<T extends object = object> =
   | ({ ok: true; changes: Change[] } & T)
   | { ok: false; code: ErrorCode; message: string };
@@ -65,6 +65,9 @@ export class Room {
   private cardRev = new Map<string, number>();
   private locks = new Map<string, Lock>();
   permissions: Permissions = { mode: 'teacher-only', activeStudentId: null };
+  /** Per-student tracing practice lists (in-memory for the life of the room). */
+  private practiceLists = new Map<string, PracticeCard[]>();
+  allowSelfAssessment = false;
   private participants = new Map<string, Participant>();
   private hostSockets = new Set<string>();
   private studentCounter = 0;
@@ -290,6 +293,39 @@ export class Room {
     return { ok: true, changes: hadLock ? ['board', 'locks'] : ['board'] };
   }
 
+  /** Tap-to-draw. Rejected as STALE if the top card is no longer the one the client saw (so a double tap draws once). */
+  drawCard(actor: Actor, p: { pileId: string; expectedCardId?: string | undefined }, now: number): RoomResult {
+    if (!this.canManipulate(actor)) return fail('FORBIDDEN', 'You cannot move cards right now.');
+    this.purgeExpiredLocks(now);
+    const top = findPile(this.board, p.pileId)?.cards[0];
+    if (top && actor.role !== 'host' && this.lockedByOther(top.id, actor)) return fail('CARD_LOCKED', `${this.lockedByOther(top.id, actor)?.byName ?? 'Someone'} is moving that card.`);
+    const res = drawTop(this.board, p.pileId, p.expectedCardId);
+    if (!res.ok) return res;
+    return this.applyPileOp(res.board, res.affected);
+  }
+
+  undoDraw(actor: Actor, p: { pileId: string }, now: number): RoomResult {
+    if (!this.canManipulate(actor)) return fail('FORBIDDEN', 'You cannot move cards right now.');
+    this.purgeExpiredLocks(now);
+    const res = undoDraw(this.board, p.pileId);
+    if (!res.ok) return res;
+    return this.applyPileOp(res.board, res.affected);
+  }
+
+  recycle(actor: Actor, p: { pileId: string; shuffle?: boolean | undefined }, now: number): RoomResult {
+    if (!this.canManipulate(actor)) return fail('FORBIDDEN', 'You cannot move cards right now.');
+    this.purgeExpiredLocks(now);
+    const res = recycleDiscard(this.board, p.pileId, p.shuffle ?? true, this.rng);
+    if (!res.ok) return res;
+    return this.applyPileOp(res.board, res.affected);
+  }
+
+  private applyPileOp(board: BoardState, affected: string[]): RoomResult {
+    const hadLocks = affected.some((id) => this.locks.has(id));
+    this.commit(board, affected);
+    return { ok: true, changes: hadLocks ? ['board', 'locks'] : ['board'] };
+  }
+
   shuffle(actor: Actor, target: 'all' | string, now: number): RoomResult {
     if (!this.canManipulate(actor)) return fail('FORBIDDEN', 'You cannot move cards right now.');
     this.purgeExpiredLocks(now);
@@ -333,8 +369,7 @@ export class Room {
 
   // ------------------------------------------------------------- serialisation
   deckMeta(): DeckMeta {
-    const { id, name, description, version, rules } = this.deck;
-    return { id, name, description, version, rules };
+    return buildDeckMeta(this.deck);
   }
 
   lockMap(): LockMap {
@@ -353,6 +388,100 @@ export class Room {
     return this.hostSockets.size + this.connectedStudentCount();
   }
 
+  // ------------------------------------------------------------- practice lists
+  markPractice(actor: Actor, participantId: string, card: Omit<PracticeCard, 'addedAt'>, now: number): RoomResult {
+    if (actor.role === 'host') {
+      /* teacher may always mark */
+    } else if (actor.role === 'student' && this.allowSelfAssessment && actor.participantId === participantId) {
+      /* self-assessment allowed */
+    } else {
+      return fail('FORBIDDEN', 'Only the teacher can mark cards for practice.');
+    }
+    if (!this.participants.has(participantId)) return fail('PARTICIPANT_NOT_FOUND', 'That student is not in the room.');
+    // The card must be a real card of the current deck, and its text comes from the deck, NEVER from the client:
+    // otherwise a student could put arbitrary words on the teacher's screen, or learn the text of a face-down card.
+    const onBoard = this.board.piles.flatMap((p) => [...p.cards, ...p.discard]).find((c) => c.id === card.id);
+    const inDeck = this.deck.piles.flatMap((p) => p.cards).find((c) => c.id === card.id);
+    if (!onBoard || !inDeck) return fail('CARD_NOT_FOUND', 'That card is not in the current deck.');
+    if (onBoard.faceDown && actor.role !== 'host') return fail('FORBIDDEN', 'That card is face-down.');
+    const list = this.practiceLists.get(participantId) ?? [];
+    if (list.some((c) => c.id === card.id)) {
+      return { ok: true, changes: [] }; // already marked
+    }
+    if (list.length >= 40) return fail('BAD_REQUEST', 'This student already has 40 practice cards.');
+    const lessonTag = inDeck.tags?.map((t) => /^lesson-(\d{1,2})$/.exec(t)?.[1]).find((x) => x !== undefined);
+    const entry: PracticeCard = {
+      id: inDeck.id, text: inDeck.text, addedAt: now, sourceDeckId: this.deck.id,
+      ...(card.cat !== undefined ? { cat: card.cat } : {}), ...(card.count !== undefined ? { count: card.count } : {}),
+      ...(lessonTag !== undefined ? { lesson: Number(lessonTag) } : card.lesson !== undefined ? { lesson: card.lesson } : {}),
+    };
+    this.practiceLists.set(participantId, [...list, entry]);
+    return { ok: true, changes: ['practice'] };
+  }
+
+  unmarkPractice(actor: Actor, participantId: string, cardId: string): RoomResult {
+    if (actor.role === 'host') {
+      /* ok */
+    } else if (actor.role === 'student' && actor.participantId === participantId) {
+      /* student may always remove from their own list */
+    } else {
+      return fail('FORBIDDEN', 'You cannot change that practice list.');
+    }
+    const list = this.practiceLists.get(participantId);
+    if (!list) return { ok: true, changes: [] };
+    const next = list.filter((c) => c.id !== cardId);
+    if (next.length === list.length) return { ok: true, changes: [] };
+    if (next.length === 0) this.practiceLists.delete(participantId);
+    else this.practiceLists.set(participantId, next);
+    return { ok: true, changes: ['practice'] };
+  }
+
+  /** A student may only stream tracing of a real card: one in the current deck, or one already on their own practice list. */
+  canTraceText(participantId: string, text: string): boolean {
+    if (this.deck.piles.some((p) => p.cards.some((c) => c.text === text))) return true;
+    return (this.practiceLists.get(participantId) ?? []).some((c) => c.text === text);
+  }
+
+  setAllowSelfAssessment(actor: Actor, enabled: boolean): RoomResult {
+    if (actor.role !== 'host') return fail('FORBIDDEN', 'Only the teacher can change that setting.');
+    this.allowSelfAssessment = enabled;
+    return { ok: true, changes: ['practice'] };
+  }
+
+  /** Replace a student's practice list (from a saved JSON file). Teacher only. */
+  importPractice(actor: Actor, participantId: string, cards: Omit<PracticeCard, 'addedAt'>[], now: number): RoomResult {
+    if (actor.role !== 'host') return fail('FORBIDDEN', 'Only the teacher can import practice lists.');
+    if (!this.participants.has(participantId)) return fail('PARTICIPANT_NOT_FOUND', 'That student is not in the room.');
+    const cleaned: PracticeCard[] = [];
+    const seen = new Set<string>();
+    for (const c of cards.slice(0, 40)) {
+      if (!c.id || !c.text || seen.has(c.id)) continue;
+      seen.add(c.id);
+      cleaned.push({
+        id: c.id,
+        text: c.text,
+        cat: c.cat,
+        count: c.count,
+        lesson: c.lesson,
+        sourceDeckId: c.sourceDeckId,
+        addedAt: typeof (c as PracticeCard).addedAt === 'number' ? (c as PracticeCard).addedAt : now,
+      });
+    }
+    if (cleaned.length === 0) this.practiceLists.delete(participantId);
+    else this.practiceLists.set(participantId, cleaned);
+    return { ok: true, changes: ['practice'] };
+  }
+
+  practiceState(forHost: boolean, viewerParticipantId?: string | null): PracticeState {
+    const lists: Record<string, PracticeCard[]> = {};
+    if (forHost) {
+      for (const [id, cards] of this.practiceLists) lists[id] = cards.map((c) => ({ ...c }));
+    } else if (viewerParticipantId && this.practiceLists.has(viewerParticipantId)) {
+      lists[viewerParticipantId] = (this.practiceLists.get(viewerParticipantId) ?? []).map((c) => ({ ...c }));
+    }
+    return { allowSelfAssessment: this.allowSelfAssessment, lists };
+  }
+
   presence(forHost: boolean): Presence {
     const presence: Presence = { participantCount: this.connectedStudentCount(), hostConnected: this.hostSockets.size > 0 };
     if (forHost) {
@@ -361,7 +490,7 @@ export class Room {
     return presence;
   }
 
-  snapshot(forHost: boolean): RoomSnapshot {
+  snapshot(forHost: boolean, viewerParticipantId?: string | null): RoomSnapshot {
     return {
       roomCode: this.code,
       deck: this.deckMeta(),
@@ -369,6 +498,7 @@ export class Room {
       locks: this.lockMap(),
       permissions: { ...this.permissions },
       presence: this.presence(forHost),
+      practice: this.practiceState(forHost, viewerParticipantId),
     };
   }
 
@@ -380,6 +510,7 @@ export class Room {
     for (const p of [...this.participants.values()]) {
       if (p.socketId === null && p.disconnectedAt !== null && now - p.disconnectedAt >= participantGraceMs) {
         this.participants.delete(p.id);
+        if (this.practiceLists.delete(p.id)) changes.add('practice'); // their list goes with them
         changes.add('presence');
         if (this.permissions.activeStudentId === p.id) {
           this.permissions = { ...this.permissions, activeStudentId: null };

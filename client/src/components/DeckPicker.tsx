@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DECK_LIMITS, parseDeckJson, type Deck, type DeckSummary } from '@shared/index';
+import { DECK_LIMITS, buildDeckMeta, parseDeckJson, resolveCardStyle, type Deck, type DeckSummary } from '@shared/index';
+import { parseCardsHtml, type ParsedFile } from '../import/htmlCards';
+import { CardFace } from './CardFace';
+import { ImportDialog } from './ImportDialog';
 import { customDecks, fetchDeck, fetchDecks, fetchMaxDeckBytes } from '../api';
 
 export type DeckChoice = { deckId: string } | { deck: Deck };
@@ -7,18 +10,34 @@ export type DeckChoice = { deckId: string } | { deck: Deck };
 type Selection = { kind: 'builtin'; id: string } | { kind: 'custom'; id: string } | null;
 
 function DeckPreview({ deck }: { deck: Deck }) {
+  const meta = buildDeckMeta(deck);
   return (
     <div className="preview" aria-label={`Preview of ${deck.name}`}>
       {deck.piles.map((p) => (
         <div key={p.id} className="preview-pile">
           <strong>{p.label}</strong> <span className="count">({p.cards.length})</span>
-          <div className="chips">
-            {p.cards.map((c) => <span className="chip" key={c.id}>{c.faceDown ? `${c.text} (face-down)` : c.text}</span>)}
-          </div>
+          {meta.styled ? (
+            // Designed decks: show the real card faces so the teacher can check the formatting.
+            <div className="preview-faces" style={{ ['--aspect' as string]: meta.aspectRatio ?? 0.666 }}>
+              {p.cards.map((c) => <div className="preview-face" key={c.id} title={c.text}><CardFace text={c.text} faceDown={false} deck={meta} cardId={c.id} /></div>)}
+            </div>
+          ) : (
+            <div className="chips">
+              {p.cards.map((c) => <span className="chip" key={c.id} style={{ borderLeft: `8px solid ${resolveCardStyle(deck.cardStyle, c.style).textColor}` }}>{c.faceDown ? `${c.text} (face-down)` : c.text}</span>)}
+            </div>
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+function downloadDeckJson(deck: Deck) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(deck, null, 2) + '\n'], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `${deck.id}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function RuleBadges({ rules }: { rules: Deck['rules'] }) {
@@ -40,6 +59,7 @@ export function DeckPicker({ confirmLabel, busy, offline = false, onChoose, onCa
   const [uploadNote, setUploadNote] = useState<string | null>(null);
   const [maxBytes, setMaxBytes] = useState<number>(DECK_LIMITS.defaultMaxBytes);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState<{ files: ParsedFile[]; problems: string[] } | null>(null);
 
   const load = useCallback(() => {
     setLoadError(null);
@@ -56,18 +76,54 @@ export function DeckPicker({ confirmLabel, busy, offline = false, onChoose, onCa
     return () => { cancelled = true; };
   }, [sel, custom]);
 
-  const onFile = async (file: File | undefined) => {
+  const MAX_HTML_BYTES = 5 * 1024 * 1024;
+
+  /** JSON decks are validated and added; HTML card sheets open the import review dialog. */
+  const onFiles = async (list: File[]) => {
     setUploadErrors([]); setUploadNote(null);
-    if (!file) return;
-    if (file.size > maxBytes) { setUploadErrors([`File is too large (${(file.size / 1024).toFixed(1)} KB). The limit is ${(maxBytes / 1024).toFixed(0)} KB.`]); return; }
-    let text: string;
-    try { text = await file.text(); } catch { setUploadErrors(['Could not read that file.']); return; }
-    const result = parseDeckJson(text, maxBytes);
-    if (!result.ok) { setUploadErrors(result.errors); return; }
-    const saved = customDecks.save(result.deck);
-    setCustom((cur) => [result.deck, ...cur.filter((d) => d.id !== result.deck.id)]);
-    setSel({ kind: 'custom', id: result.deck.id });
-    setUploadNote(saved.ok ? `Added “${result.deck.name}” to this browser.` : saved.error);
+    if (list.length === 0) return;
+    const errors: string[] = [];
+    const added: Deck[] = [];
+    const htmlFiles: ParsedFile[] = [];
+    for (const file of list) {
+      const isHtml = /\.html?$/i.test(file.name) || file.type === 'text/html';
+      if (isHtml) {
+        if (file.size > MAX_HTML_BYTES) { errors.push(`${file.name}: file is too large to import (limit 5 MB).`); continue; }
+        try {
+          const doc = new DOMParser().parseFromString(await file.text(), 'text/html'); // inert: scripts in the file never run
+          htmlFiles.push(parseCardsHtml(doc, file.name));
+        } catch { errors.push(`${file.name}: could not be read as an HTML card sheet.`); }
+        continue;
+      }
+      if (file.size > maxBytes) { errors.push(`${file.name}: file is too large (${(file.size / 1024).toFixed(1)} KB). The limit is ${(maxBytes / 1024).toFixed(0)} KB.`); continue; }
+      let text: string;
+      try { text = await file.text(); } catch { errors.push(`${file.name}: could not read that file.`); continue; }
+      const result = parseDeckJson(text, maxBytes);
+      if (!result.ok) { errors.push(...result.errors.map((e) => (list.length > 1 ? `${file.name}: ${e}` : e))); continue; }
+      added.push(result.deck);
+    }
+    if (added.length) {
+      let note: string | null = null;
+      for (const d of added) { const saved = customDecks.save(d); if (!saved.ok) note = saved.error; }
+      setCustom(customDecks.load());
+      const last = added[added.length - 1] as Deck;
+      setSel({ kind: 'custom', id: last.id });
+      setUploadNote(note ?? (added.length === 1 ? `Added “${last.name}” to this browser.` : `Added ${added.length} decks to this browser.`));
+    }
+    if (htmlFiles.length) {
+      htmlFiles.sort((a, b) => (a.lesson ?? 1e9) - (b.lesson ?? 1e9) || a.fileName.localeCompare(b.fileName, undefined, { numeric: true }));
+      setImporting({ files: htmlFiles, problems: errors });
+    } else setUploadErrors(errors);
+  };
+
+  const finishImport = (decks: Deck[]) => {
+    let note: string | null = null;
+    for (const d of decks) { const saved = customDecks.save(d); if (!saved.ok) note = saved.error; }
+    setCustom(customDecks.load());
+    const last = decks[decks.length - 1];
+    if (last) setSel({ kind: 'custom', id: last.id });
+    setUploadNote(note ?? `Added ${decks.length} deck${decks.length === 1 ? '' : 's'} from your card sheets. Use “Download JSON” to keep a copy.`);
+    setImporting(null);
   };
 
   const choose = () => {
@@ -105,6 +161,7 @@ export function DeckPicker({ confirmLabel, busy, offline = false, onChoose, onCa
                 <span className="muted small">{d.piles.reduce((n, p) => n + p.cards.length, 0)} cards · {d.piles.map((p) => p.label).join(' / ')}</span>
               </span>
             </label>
+            <button type="button" className="btn small" aria-label={`Download ${d.name} as a JSON file`} onClick={() => downloadDeckJson(d)}>Download JSON</button>
             <button type="button" className="btn small" aria-label={`Remove ${d.name} from this browser`} onClick={() => { customDecks.remove(d.id); setCustom(customDecks.load()); if (sel?.kind === 'custom' && sel.id === d.id) setSel(builtins?.[0] ? { kind: 'builtin', id: builtins[0].id } : null); }}>Remove</button>
           </div>
         ))}
@@ -112,10 +169,10 @@ export function DeckPicker({ confirmLabel, busy, offline = false, onChoose, onCa
 
       <div className="upload">
         <h3>Upload your own deck</h3>
-        <p className="muted small">A JSON file with three piles of cards. Maximum {(maxBytes / 1024).toFixed(0)} KB. <a href="/sample-deck.json" download="sample-deck.json">Download an example</a>.</p>
+        <p className="muted small">Choose <strong>JSON deck files</strong> (max {(maxBytes / 1024).toFixed(0)} KB each; <a href="/sample-deck.json" download="sample-deck.json">download an example</a>) or <strong>HTML card sheets</strong> such as <code>skills_1.html</code> — you can pick several at once and they are converted to decks for you.</p>
         <label className="btn file-btn">
-          Choose a JSON file…
-          <input ref={fileRef} type="file" accept=".json,application/json" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; /* allow re-selecting the same (fixed) file */ void onFile(f); }} />
+          Choose files…
+          <input ref={fileRef} type="file" multiple accept=".json,.html,.htm,application/json,text/html" onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ''; /* allow re-selecting the same (fixed) file */ void onFiles(fs); }} />
         </label>
         {uploadNote && <p className="ok" role="status">{uploadNote}</p>}
         {uploadErrors.length > 0 && (
@@ -125,6 +182,8 @@ export function DeckPicker({ confirmLabel, busy, offline = false, onChoose, onCa
           </div>
         )}
       </div>
+
+      {importing && <ImportDialog files={importing.files} problems={importing.problems} onImport={finishImport} onCancel={() => setImporting(null)} />}
 
       {preview && (
         <div className="preview-wrap">

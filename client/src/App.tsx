@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Home } from './components/Home';
+import { TracingCanvas } from './components/TracingCanvas';
 import { DeckPicker, type DeckChoice } from './components/DeckPicker';
 import { StudentView } from './components/StudentView';
 import { TeacherView } from './components/TeacherView';
@@ -65,6 +66,19 @@ export function App() {
       <main className="setup">
         <header className="topbar"><h1 className="brand small">Phonics Piles <span className="muted">· New game</span></h1><ConnectionBadge status={state.conn} /></header>
         <div className="panel"><DeckPicker confirmLabel="Start game" busy={busy} offline={state.conn !== 'online'} onChoose={(c) => void create(c)} onCancel={() => setSetup(false)} /></div>
+      </main>
+    );
+  } else if (new URLSearchParams(window.location.search).get('view') === 'trace') {
+    const text = new URLSearchParams(window.location.search).get('text') || 'ea';
+    const cat = new URLSearchParams(window.location.search).get('cat') || 'P';
+    const lesson = Number(new URLSearchParams(window.location.search).get('lesson') || '3') || 3;
+    screen = (
+      <main className="trace-demo">
+        <header className="topbar">
+          <h1 className="brand small">Tracing Practice <span className="muted">· demo</span></h1>
+          <button type="button" className="btn small" onClick={() => { window.location.search = ''; }}>Back</button>
+        </header>
+        <TracingCanvas card={{ text, cat, count: '2', lesson }} vibrate />
       </main>
     );
   } else {

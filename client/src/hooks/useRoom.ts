@@ -10,7 +10,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import type {
   AckResult, BoardView, ClientToServerEvents, CreateRoomPayload, CreateRoomResult, EndReason, JoinResult, LockMap, Permissions, Presence,
-  Role, RoomSnapshot, ServerToClientEvents, YouInfo, ControlMode,
+  PracticeState, Role, RoomSnapshot, ServerToClientEvents, YouInfo, ControlMode,
 } from '@shared/index';
 import { SERVER_URL } from '../api';
 
@@ -38,6 +38,7 @@ type Action =
   | { type: 'locks'; locks: LockMap }
   | { type: 'permissions'; permissions: Permissions }
   | { type: 'presence'; presence: Presence }
+  | { type: 'practice'; practice: PracticeState }
   | { type: 'ended'; reason: EndedReason }
   | { type: 'reset' };
 
@@ -53,6 +54,7 @@ function reducer(state: RoomState, a: Action): RoomState {
     case 'locks': return state.snapshot ? { ...state, snapshot: { ...state.snapshot, locks: a.locks } } : state;
     case 'permissions': return state.snapshot ? { ...state, snapshot: { ...state.snapshot, permissions: a.permissions } } : state;
     case 'presence': return state.snapshot ? { ...state, snapshot: { ...state.snapshot, presence: a.presence } } : state;
+    case 'practice': return state.snapshot ? { ...state, snapshot: { ...state.snapshot, practice: a.practice } } : state;
     case 'ended': return { ...state, phase: 'ended', ended: a.reason, snapshot: null, session: null };
     case 'reset': return { ...state, phase: 'idle', ended: null, snapshot: null, session: null };
   }
@@ -85,6 +87,22 @@ function writeCreds(c: Creds | null): void {
     if (c.role === 'host') localStorage.setItem(HOST_KEY, JSON.stringify({ roomCode: c.roomCode, hostToken: c.secret }));
     else sessionStorage.setItem(STUDENT_KEY, JSON.stringify({ roomCode: c.roomCode, participantToken: c.secret, displayName: c.displayName ?? '' }));
   } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------- practice live-mirror listeners (teacher UI)
+export type PracticeStartInfo = { participantId: string; name: string; text: string; cat?: string; count?: string; lesson?: number };
+export type PracticePointsInfo = { participantId: string; points: number[] };
+export type PracticeEndInfo = { participantId: string };
+type PracticeHandlers = {
+  onStart?: (info: PracticeStartInfo) => void;
+  onPoints?: (info: PracticePointsInfo) => void;
+  onEnd?: (info: PracticeEndInfo) => void;
+};
+const practiceHandlers: PracticeHandlers = {};
+export function setPracticeHandlers(h: PracticeHandlers) {
+  practiceHandlers.onStart = h.onStart;
+  practiceHandlers.onPoints = h.onPoints;
+  practiceHandlers.onEnd = h.onEnd;
 }
 
 // ---------------------------------------------------------------- socket singleton
@@ -185,6 +203,14 @@ export function useRoom() {
     s.on('room:presence', onPresence);
     s.on('room:ended', onEnded);
     s.on('session:replaced', onReplaced);
+    const onPracticeStart = (info: PracticeStartInfo) => practiceHandlers.onStart?.(info);
+    const onPracticePoints = (info: PracticePointsInfo) => practiceHandlers.onPoints?.(info);
+    const onPracticeEnd = (info: PracticeEndInfo) => practiceHandlers.onEnd?.(info);
+    const onPracticeUpdate = (practice: PracticeState) => dispatch({ type: 'practice', practice });
+    s.on('practice:student-start', onPracticeStart);
+    s.on('practice:student-points', onPracticePoints);
+    s.on('practice:student-end', onPracticeEnd);
+    s.on('practice:update', onPracticeUpdate);
     if (s.connected) onConnect(); // listeners attached after the socket was already up (React StrictMode remount)
     else dispatch({ type: 'conn', conn: 'connecting' });
     return () => {
@@ -199,6 +225,10 @@ export function useRoom() {
       s.off('room:presence', onPresence);
       s.off('room:ended', onEnded);
       s.off('session:replaced', onReplaced);
+      s.off('practice:student-start', onPracticeStart);
+      s.off('practice:student-points', onPracticePoints);
+      s.off('practice:student-end', onPracticeEnd);
+      s.off('practice:update', onPracticeUpdate);
     };
   }, [authenticate, clearCreds]);
 
@@ -248,9 +278,23 @@ export function useRoom() {
     flip: (cardId: string, baseVersion: number) => request('board:flip', { cardId, baseVersion }),
     shufflePile: (pileId: string) => request('board:shuffle', { scope: 'pile', pileId }),
     shuffleAll: () => request('board:shuffle', { scope: 'all' }),
+    draw: (pileId: string, expectedCardId: string) => request('pile:draw', { pileId, expectedCardId }),
+    undo: (pileId: string) => request('pile:undo', { pileId }),
+    recycle: (pileId: string) => request('pile:recycle', { pileId }),
     reset: () => request('board:reset', {}),
     setPermissions: (mode: ControlMode, activeStudentId: string | null) => request('host:set-permissions', { mode, activeStudentId }),
     loadDeck: (payload: CreateRoomPayload) => request('host:load-deck', payload),
+    practiceStart: (card: { text: string; cat?: string; count?: string; lesson?: number }) =>
+      request('practice:start', card),
+    practicePoints: (points: number[]) => request('practice:points', { points }),
+    practiceEnd: () => request('practice:end', {}),
+    practiceMark: (participantId: string, card: { id: string; text: string; cat?: string; count?: string; lesson?: number; sourceDeckId?: string }) =>
+      request('practice:mark', { participantId, card }),
+    practiceUnmark: (participantId: string, cardId: string) =>
+      request('practice:unmark', { participantId, cardId }),
+    practiceAllowSelf: (enabled: boolean) => request('practice:allow-self', { enabled }),
+    practiceImport: (participantId: string, cards: { id: string; text: string; cat?: string; count?: string; lesson?: number; sourceDeckId?: string; addedAt?: number }[]) =>
+      request('practice:import', { participantId, cards }),
   };
 
   return { state, createRoom, joinRoom, leave, endGame, dismissEnded, actions, hasSavedHost: credsRef.current?.role === 'host' };

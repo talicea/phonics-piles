@@ -82,3 +82,15 @@ export function CopyButton({ text, label, onCopied }: { text: string; label: str
   };
   return <button type="button" className="btn" onClick={() => void copy()}>{done ? '✓ Copied' : label}</button>;
 }
+
+export type BoardViewMode = 'table' | 'arrange';
+
+/** Table (tap to draw) vs Arrange (drag cards between piles). Only shown to people who can move cards. */
+export function ViewToggle({ mode, onChange }: { mode: BoardViewMode; onChange(m: BoardViewMode): void }) {
+  return (
+    <div className="view-toggle" role="group" aria-label="Board view">
+      <button type="button" className={`btn small${mode === 'table' ? ' on' : ''}`} aria-pressed={mode === 'table'} onClick={() => onChange('table')}>🃏 Table</button>
+      <button type="button" className={`btn small${mode === 'arrange' ? ' on' : ''}`} aria-pressed={mode === 'arrange'} onClick={() => onChange('arrange')}>✋ Arrange cards</button>
+    </div>
+  );
+}

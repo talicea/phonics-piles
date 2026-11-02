@@ -1,5 +1,6 @@
 /** Types describing what travels over the wire (what clients are allowed to see). */
 import type { DeckRules } from './deck';
+import type { CardStyle } from './style';
 
 export type Role = 'host' | 'student';
 
@@ -23,7 +24,10 @@ export interface CardView {
 export interface PileView {
   id: string;
   label: string;
+  /** The draw pile. cards[0] is the TOP card (the one showing). */
   cards: CardView[];
+  /** Cards already drawn from this pile. discard[0] is the most recently drawn. */
+  discard: CardView[];
 }
 
 export interface BoardView {
@@ -51,6 +55,13 @@ export interface DeckMeta {
   description: string;
   version: string;
   rules: DeckRules;
+  /** True when the deck has formatting: cards are drawn as designed cards. */
+  styled: boolean;
+  aspectRatio?: number;
+  /** Deck-wide card formatting. */
+  cardStyle?: CardStyle;
+  /** Per-card formatting overrides, by card id (only cards that have any). */
+  cardStyles: Record<string, CardStyle>;
 }
 
 export interface Presence {
@@ -60,6 +71,27 @@ export interface Presence {
   participants?: ParticipantView[];
 }
 
+/** A card the teacher has marked for tracing practice. */
+export interface PracticeCard {
+  id: string;
+  text: string;
+  cat?: string;
+  count?: string;
+  lesson?: number;
+  sourceDeckId?: string;
+  addedAt: number;
+}
+
+export interface PracticeState {
+  /** When true, students may add cards to their own list. */
+  allowSelfAssessment: boolean;
+  /**
+   * Practice lists by participant id.
+   * Host snapshot includes every student; student snapshot includes only their own entry.
+   */
+  lists: Record<string, PracticeCard[]>;
+}
+
 export interface RoomSnapshot {
   roomCode: string;
   deck: DeckMeta;
@@ -67,6 +99,7 @@ export interface RoomSnapshot {
   locks: LockMap;
   permissions: Permissions;
   presence: Presence;
+  practice: PracticeState;
 }
 
 export interface YouInfo {

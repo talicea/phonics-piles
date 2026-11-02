@@ -8,6 +8,7 @@
  * See docs/DECK_SCHEMA.md for the human-readable description.
  */
 import { z } from 'zod';
+import { CardStyleSchema, type CardStyle } from './style';
 
 export const DECK_SCHEMA_VERSION = 1 as const;
 
@@ -54,6 +55,8 @@ export const CardSchema = z
     /** Start face-down (only meaningful when rules.allowFlip is true, but harmless otherwise). */
     faceDown: z.boolean({ error: '"faceDown" must be true or false.' }).optional(),
     tags: z.array(tagString).max(DECK_LIMITS.maxCardTags, `A card may have at most ${DECK_LIMITS.maxCardTags} tags.`).optional(),
+    /** Optional formatting for this card; overrides the deck-wide `cardStyle`. */
+    style: CardStyleSchema.optional(),
   })
   .strict();
 
@@ -107,6 +110,10 @@ export const DeckSchema = z
       .length(DECK_LIMITS.pileCount, `A deck must define exactly ${DECK_LIMITS.pileCount} piles (beginning, middle, ending).`),
     rules: RulesSchema.default({ allowCrossPileMoves: true, allowReorder: true, allowFlip: false, initialShuffle: false }),
     tags: z.array(tagString).max(DECK_LIMITS.maxTags, `A deck may have at most ${DECK_LIMITS.maxTags} tags.`).optional(),
+    /** Optional formatting applied to every card (cards can override it). Presence of any styling switches the deck to "designed card" rendering. */
+    cardStyle: CardStyleSchema.optional(),
+    /** Card shape as width ÷ height (e.g. 0.6662 for a 4×6 in portrait card). Only used with designed-card rendering. */
+    cardAspectRatio: z.number({ error: '"cardAspectRatio" must be a number.' }).min(0.4, 'cardAspectRatio must be at least 0.4.').max(2.5, 'cardAspectRatio must be at most 2.5.').optional(),
   })
   .strict()
   .superRefine((deck, ctx) => {
@@ -138,6 +145,12 @@ export const DeckSchema = z
 
 export type Deck = z.infer<typeof DeckSchema>;
 export type DeckCard = z.infer<typeof CardSchema>;
+export type { CardStyle };
+
+/** True when the deck describes how its cards should look (so the client draws designed cards instead of plain tiles). */
+export function isStyledDeck(deck: Pick<Deck, 'cardStyle' | 'cardAspectRatio' | 'piles'>): boolean {
+  return !!deck.cardStyle || deck.cardAspectRatio !== undefined || deck.piles.some((p) => p.cards.some((c) => c.style));
+}
 export type DeckPile = z.infer<typeof PileSchema>;
 export type DeckRules = z.infer<typeof RulesSchema>;
 

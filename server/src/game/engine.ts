@@ -13,7 +13,10 @@ export interface CardState {
 export interface PileState {
   id: string;
   label: string;
+  /** Draw pile; cards[0] is the top card. */
   cards: CardState[];
+  /** Drawn cards; discard[0] is the most recent. */
+  discard: CardState[];
 }
 export interface BoardState {
   version: number;
@@ -36,7 +39,7 @@ export function shuffleInPlace<T>(items: T[], rng: Rng = secureRandomInt): T[] {
   return items;
 }
 
-const clonePile = (p: PileState): PileState => ({ ...p, cards: p.cards.map((c) => ({ ...c })) });
+const clonePile = (p: PileState): PileState => ({ ...p, cards: p.cards.map((c) => ({ ...c })), discard: p.discard.map((c) => ({ ...c })) });
 export const cloneBoard = (b: BoardState): BoardState => ({ version: b.version, piles: b.piles.map(clonePile) });
 
 export function createBoard(deck: Deck, rng: Rng = secureRandomInt): BoardState {
@@ -44,13 +47,14 @@ export function createBoard(deck: Deck, rng: Rng = secureRandomInt): BoardState 
     id: p.id,
     label: p.label,
     cards: p.cards.map((c) => ({ id: c.id, text: c.text, faceDown: c.faceDown ?? false })),
+    discard: [],
   }));
   if (deck.rules.initialShuffle) piles.forEach((p) => shuffleInPlace(p.cards, rng));
   return { version: 1, piles };
 }
 
 export function allCardIds(board: BoardState): string[] {
-  return board.piles.flatMap((p) => p.cards.map((c) => c.id));
+  return board.piles.flatMap((p) => [...p.cards, ...p.discard].map((c) => c.id));
 }
 
 export function findCard(board: BoardState, cardId: string): { pileIndex: number; cardIndex: number; card: CardState } | null {
@@ -118,6 +122,53 @@ export function shuffleBoard(board: BoardState, target: 'all' | string, rng: Rng
   return { ok: true, board: next, affected };
 }
 
+const view = (c: CardState, forHost: boolean) => ({ id: c.id, text: c.faceDown && !forHost ? null : c.text, faceDown: c.faceDown });
+
+/** Tap-to-draw: the top card moves onto the pile's discard and the next card becomes the top. */
+export function drawTop(board: BoardState, pileId: string, expectedCardId?: string): EngineResult<{ board: BoardState; affected: string[] }> {
+  const pile = findPile(board, pileId);
+  if (!pile) return { ok: false, code: 'PILE_NOT_FOUND', message: 'That pile does not exist.' };
+  const top = pile.cards[0];
+  if (!top) return { ok: false, code: 'RULE_VIOLATION', message: 'That pile is empty.' };
+  if (expectedCardId !== undefined && expectedCardId !== top.id) return { ok: false, code: 'STALE', message: 'That pile just changed. Try again.' };
+  const next = cloneBoard(board);
+  const np = findPile(next, pileId) as PileState;
+  np.discard.unshift(np.cards.shift() as CardState);
+  next.version = board.version + 1;
+  return { ok: true, board: next, affected: [top.id] };
+}
+
+/** Undo: the most recently drawn card goes back on top of the pile. */
+export function undoDraw(board: BoardState, pileId: string): EngineResult<{ board: BoardState; affected: string[] }> {
+  const pile = findPile(board, pileId);
+  if (!pile) return { ok: false, code: 'PILE_NOT_FOUND', message: 'That pile does not exist.' };
+  const last = pile.discard[0];
+  if (!last) return { ok: false, code: 'RULE_VIOLATION', message: 'Nothing has been drawn from that pile yet.' };
+  const next = cloneBoard(board);
+  const np = findPile(next, pileId) as PileState;
+  np.cards.unshift(np.discard.shift() as CardState);
+  next.version = board.version + 1;
+  return { ok: true, board: next, affected: [last.id] };
+}
+
+/**
+ * Recycle: all discards go back UNDER whatever is left of the pile. Shuffled by default; without shuffle the
+ * original draw order is restored (the first card drawn comes up first again).
+ */
+export function recycleDiscard(board: BoardState, pileId: string, shuffle: boolean, rng: Rng = secureRandomInt): EngineResult<{ board: BoardState; affected: string[] }> {
+  const pile = findPile(board, pileId);
+  if (!pile) return { ok: false, code: 'PILE_NOT_FOUND', message: 'That pile does not exist.' };
+  if (pile.discard.length === 0) return { ok: false, code: 'RULE_VIOLATION', message: 'There is nothing in that discard pile.' };
+  const next = cloneBoard(board);
+  const np = findPile(next, pileId) as PileState;
+  const returning = [...np.discard].reverse(); // oldest drawn first
+  const affected = returning.map((c) => c.id);
+  np.cards.push(...(shuffle ? shuffleInPlace(returning, rng) : returning));
+  np.discard = [];
+  next.version = board.version + 1;
+  return { ok: true, board: next, affected };
+}
+
 /** Restore an earlier arrangement under a fresh version number. */
 export function restoreBoard(initial: BoardState, currentVersion: number): BoardState {
   const b = cloneBoard(initial);
@@ -135,7 +186,8 @@ export function toBoardView(board: BoardState, forHost: boolean): BoardView {
     piles: board.piles.map((p) => ({
       id: p.id,
       label: p.label,
-      cards: p.cards.map((c) => ({ id: c.id, text: c.faceDown && !forHost ? null : c.text, faceDown: c.faceDown })),
+      cards: p.cards.map((c) => view(c, forHost)),
+      discard: p.discard.map((c) => view(c, forHost)),
     })),
   };
 }

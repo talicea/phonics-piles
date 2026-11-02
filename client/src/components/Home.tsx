@@ -22,6 +22,7 @@ export function Home({ joinRoom, onTeacher, offline }: { joinRoom(code: string, 
     <main className="home">
       <h1 className="brand">Phonics Piles</h1>
       <p className="tagline">Build nonsense words together with three piles of sound cards.</p>
+      <p className="muted small"><a href="?view=trace&text=ea&cat=P&lesson=3">Try tracing practice (demo)</a></p>
       <div className="home-grid">
         <section className="panel" aria-labelledby="join-h">
           <h2 id="join-h">Students: join a game</h2>

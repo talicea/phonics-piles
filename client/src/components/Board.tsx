@@ -11,12 +11,13 @@
  *  - The board never changes itself: a drop sends a request and the card moves when the server broadcasts it.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AckResult, BoardView, CardView, DeckMeta, LockMap } from '@shared/index';
+import { DEFAULT_ASPECT_RATIO, type AckResult, type BoardView, type CardView, type DeckMeta, type LockMap } from '@shared/index';
+import { CardFace } from './CardFace';
 
 export interface BoardProps {
   board: BoardView;
   locks: LockMap;
-  rules: DeckMeta['rules'];
+  deck: DeckMeta;
   canManipulate: boolean;
   isHost: boolean;
   /** 'host' or the participant id; used to tell my locks from other people's. */
@@ -32,7 +33,7 @@ export interface BoardProps {
 }
 
 interface DropTarget { pileId: string; index: number }
-interface DragView { cardId: string; text: string; faceDown: boolean; x: number; y: number; offX: number; offY: number; w: number; h: number; target: DropTarget | null }
+interface DragView { cardId: string; text: string | null; faceDown: boolean; x: number; y: number; offX: number; offY: number; w: number; h: number; target: DropTarget | null }
 interface DragInternal {
   cardId: string; pointerId: number; pointerType: string;
   startX: number; startY: number; lastX: number; lastY: number; offX: number; offY: number; w: number; h: number;
@@ -47,13 +48,12 @@ const LOCK_REFRESH_MS = 4000;
 const EDGE = 70;
 
 const cardLabel = (c: CardView) => (c.faceDown ? 'face-down card' : `card ${c.text ?? ''}`);
-const scaleFor = (text: string) => { const n = Array.from(text).length; return n <= 3 ? 1 : n === 4 ? 0.78 : n <= 6 ? 0.6 : 0.42; };
 
 // ------------------------------------------------------------------------------------------------ Card tile
 interface TileProps {
   card: CardView; index: number; count: number; pileLabel: string; isTop: boolean;
   selected: boolean; dragging: boolean; lockedBy: string | null; drop: '' | 'before' | 'after';
-  disabled: boolean; tabbable: boolean;
+  disabled: boolean; tabbable: boolean; deck: DeckMeta;
   onPointerDown(e: React.PointerEvent<HTMLButtonElement>, id: string): void;
   onKeyDown(e: React.KeyboardEvent<HTMLButtonElement>, id: string): void;
   onActivate(id: string): void;
@@ -62,8 +62,7 @@ interface TileProps {
 
 const CardTile = memo(function CardTile(p: TileProps) {
   const { card } = p;
-  const text = card.faceDown ? '?' : card.text ?? '?';
-  const cls = ['card', p.selected && 'selected', p.dragging && 'dragging', p.lockedBy && 'locked', card.faceDown && 'facedown', p.drop && `drop-${p.drop}`, p.disabled && 'disabled']
+  const cls = ['card', p.deck.styled && 'styled', p.selected && 'selected', p.dragging && 'dragging', p.lockedBy && 'locked', card.faceDown && 'facedown', p.drop && `drop-${p.drop}`, p.disabled && 'disabled']
     .filter(Boolean).join(' ');
   const label = `${cardLabel(card)}, ${p.pileLabel}, position ${p.index + 1} of ${p.count}${p.isTop ? ', top card' : ''}${p.selected ? ', selected' : ''}${p.lockedBy ? `, being moved by ${p.lockedBy}` : ''}`;
   return (
@@ -75,7 +74,6 @@ const CardTile = memo(function CardTile(p: TileProps) {
       aria-pressed={p.disabled ? undefined : p.selected}
       aria-disabled={p.disabled || undefined}
       tabIndex={p.tabbable ? 0 : -1}
-      style={{ ['--scale' as string]: scaleFor(text) }}
       onPointerDown={(e) => p.onPointerDown(e, card.id)}
       onKeyDown={(e) => p.onKeyDown(e, card.id)}
       onFocus={() => p.onFocusCard(card.id)}
@@ -83,7 +81,7 @@ const CardTile = memo(function CardTile(p: TileProps) {
       onClick={(e) => { if (e.detail === 0) p.onActivate(card.id); }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <span className="card-text">{text}</span>
+      <CardFace text={card.text} faceDown={card.faceDown} deck={p.deck} cardId={card.id} />
       {p.isTop && <span className="badge badge-top" aria-hidden="true">TOP</span>}
       {p.selected && <span className="badge badge-sel" aria-hidden="true">✓</span>}
       {p.lockedBy && <span className="badge badge-lock" aria-hidden="true">🔒 {p.lockedBy}</span>}
@@ -93,7 +91,9 @@ const CardTile = memo(function CardTile(p: TileProps) {
 
 // ------------------------------------------------------------------------------------------------ Board
 export function Board(props: BoardProps) {
-  const { board, locks, rules, canManipulate, isHost, myOwnerId } = props;
+  const { board, locks, deck, canManipulate, isHost, myOwnerId } = props;
+  const rules = deck.rules;
+  const aspect = deck.aspectRatio ?? DEFAULT_ASPECT_RATIO;
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -152,7 +152,7 @@ export function Board(props: BoardProps) {
     const from = whereRef.current.get(cardId);
     const toIdx = propsRef.current.board.piles.findIndex((p) => p.id === t.pileId);
     if (!from || toIdx < 0) return false;
-    return from.pileIdx === toIdx ? propsRef.current.rules.allowReorder : propsRef.current.rules.allowCrossPileMoves;
+    return from.pileIdx === toIdx ? propsRef.current.deck.rules.allowReorder : propsRef.current.deck.rules.allowCrossPileMoves;
   }, []);
 
   const stopTimers = (st: DragInternal) => {
@@ -184,7 +184,7 @@ export function Board(props: BoardProps) {
     st.active = true;
     holdingRef.current = true;
     if (navigator.vibrate) try { navigator.vibrate(8); } catch { /* ignore */ }
-    setDrag({ cardId: st.cardId, text: found.card.text ?? '?', faceDown: found.card.faceDown, x: st.lastX, y: st.lastY, offX: st.offX, offY: st.offY, w: st.w, h: st.h, target: null });
+    setDrag({ cardId: st.cardId, text: found.card.text, faceDown: found.card.faceDown, x: st.lastX, y: st.lastY, offX: st.offX, offY: st.offY, w: st.w, h: st.h, target: null });
     void propsRef.current.onLock(st.cardId).then((res) => {
       if (!res.ok && dragRef.current === st) { cancelDrag(false); propsRef.current.notify(res.message); }
     });
@@ -237,7 +237,7 @@ export function Board(props: BoardProps) {
         setDrag(null);
         void p.onUnlock(st.cardId);
         const raw = computeTarget(st.lastX, st.lastY, st.cardId);
-        if (raw) p.notify(p.rules.allowCrossPileMoves ? 'That move is not allowed in this deck.' : 'This deck keeps cards in their own pile.');
+        if (raw) p.notify(p.deck.rules.allowCrossPileMoves ? 'That move is not allowed in this deck.' : 'This deck keeps cards in their own pile.');
         return;
       }
       void p.onMove({ cardId: st.cardId, toPileId: target.pileId, toIndex: target.index, baseVersion: st.baseVersion }).then((res) => {
@@ -338,15 +338,16 @@ export function Board(props: BoardProps) {
   const spoken = words.map((c) => (c ? (c.faceDown ? 'hidden card' : c.text) : 'empty')).join(' ');
 
   return (
-    <div className="board" ref={rootRef}>
+    <div className={`board${deck.styled ? ' styled' : ''}`} ref={rootRef} style={{ ['--aspect' as string]: aspect }}>
       <section className="word-strip" aria-label="Top card of each pile, left to right">
         <div className="sr-only" aria-live="polite">Top cards: {spoken}</div>
         {board.piles.map((p, i) => {
           const c = words[i];
-          const t = c ? (c.faceDown ? '?' : c.text ?? '?') : '–';
           return (
             <div className="word-slot" key={p.id}>
-              <div className="word-card" style={{ ['--scale' as string]: scaleFor(t) }} aria-hidden="true">{t}</div>
+              <div className={`word-card${deck.styled ? ' styled' : ''}`} aria-hidden="true">
+                {c ? <CardFace text={c.text} faceDown={c.faceDown} deck={deck} cardId={c.id} /> : <span className="card-text">–</span>}
+              </div>
               <div className="word-label">{p.label}</div>
             </div>
           );
@@ -397,7 +398,7 @@ export function Board(props: BoardProps) {
                     <CardTile
                       key={card.id} card={card} index={i} count={pile.cards.length} pileLabel={pile.label} isTop={i === 0}
                       selected={selected === card.id} dragging={drag?.cardId === card.id} lockedBy={lockedBy} drop={drop}
-                      disabled={!canManipulate} tabbable={tabId === card.id}
+                      disabled={!canManipulate} tabbable={tabId === card.id} deck={deck}
                       onPointerDown={onCardPointerDown} onKeyDown={onCardKeyDown} onActivate={onActivate} onFocusCard={onFocusCard}
                     />
                   );
@@ -410,8 +411,8 @@ export function Board(props: BoardProps) {
       </div>
 
       {drag && (
-        <div className="card ghost-card" aria-hidden="true" style={{ left: drag.x - drag.offX, top: drag.y - drag.offY, width: drag.w, height: drag.h, ['--scale' as string]: scaleFor(drag.faceDown ? '?' : drag.text) }}>
-          <span className="card-text">{drag.faceDown ? '?' : drag.text}</span>
+        <div className={`card ghost-card${deck.styled ? ' styled' : ''}`} aria-hidden="true" style={{ left: drag.x - drag.offX, top: drag.y - drag.offY, width: drag.w, height: drag.h }}>
+          <CardFace text={drag.text} faceDown={drag.faceDown} deck={deck} cardId={drag.cardId} />
         </div>
       )}
     </div>
